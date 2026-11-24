@@ -23,7 +23,8 @@ const makeColorReader = () => {
  * layout, the links and what a screen reader finds. Once the hero is running
  * they are made transparent, and Skia draws them again in two textures: what
  * is marked data-hero-front in one, everything else in the other. A WebGPU
- * pass draws a ribbon between the two: see hero/hero.ts.
+ * pass draws a ribbon between the two, which rises over both once it loops:
+ * see hero/hero.ts.
  *
  * Without WebGPU, or without the wasm module, the elements simply stay.
  */
