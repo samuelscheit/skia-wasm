@@ -5,11 +5,11 @@
  *
  * Skia draws the elements of the page into two textures: what the page marks
  * to stay in front (the word "skia", the subtitle and the buttons) in one,
- * everything else in the other. A fragment shader then draws a ribbon between
- * the two. It can, because what Skia draws is a texture like any other.
+ * everything else in the other. A fragment shader then weaves a ribbon through
+ * the two: between them until it loops, over both from there on. It can, because what Skia draws is a texture like any other.
  *
  * The ribbon draws itself across the page, curls into a loop where it passes
- * over itself, and then sways slowly.
+ * over itself and over the text, and then sways slowly.
  */
 import { Skia, parseColor } from "skia-wasm";
 import type { Surface } from "skia-wasm";
@@ -147,6 +147,9 @@ const SHADOW_DEPTH = 0.5;
 // How many stretches on each side of the turn of the loop are read as one
 // ribbon, whatever the strand.
 const JOIN = 8;
+// How many samples past the turn it takes the ribbon to rise over the layer
+// that is in front of it until there: text at the turn fades, it is not cut.
+const RISE = 12.0;
 
 struct Uniforms {
   // The width of the ribbon, how many samples of it are drawn so far, where
@@ -168,8 +171,8 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
-// What Skia drew, premultiplied: what the ribbon passes over, then what
-// stays in front of the ribbon.
+// What Skia drew, premultiplied: what the whole ribbon passes over, then what
+// stays in front of the ribbon until it loops.
 @group(0) @binding(1) var under: texture_2d<f32>;
 @group(0) @binding(2) var over: texture_2d<f32>;
 
@@ -325,13 +328,19 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     }
     ribbon = vec4f(color, 1.0) * lower;
   }
-  if (upper > 0.0) {
-    let color = pearl(across[1] / weight[1], along[1] / weight[1]);
-    ribbon = vec4f(color, 1.0) * upper + ribbon * (1.0 - upper);
+  // The lower strand over one layer.
+  let base = ribbon + below * (1.0 - ribbon.a);
+  if (upper <= 0.0) {
+    return above + base * (1.0 - above.a);
   }
-
-  // The ribbon over one layer, the other layer over the ribbon.
-  return above + (ribbon + below * (1.0 - ribbon.a)) * (1.0 - above.a);
+  // The other layer goes over the upper strand where it leaves the turn, as
+  // it does over the lower one, and under it further on. Both orders give the
+  // same pixel where that layer is empty: the two strands join without a seam.
+  let t = along[1] / weight[1];
+  let strand = vec4f(pearl(across[1] / weight[1], t), 1.0) * upper;
+  let front = above + (strand + base * (1.0 - upper)) * (1.0 - above.a);
+  let back = strand + (above + base * (1.0 - above.a)) * (1.0 - upper);
+  return mix(front, back, smoothstep(0.0, RISE, t - turn));
 }
 `;
 
